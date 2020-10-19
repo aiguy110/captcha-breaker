@@ -8,4 +8,4 @@ input_data = im[np.newaxis, :,:,:]
 input_data = input_data.astype('float')
 
 my_model = model.CaptchaBreaker()
-print( my_model(input_data) )
+print( my_model.predict(input_data).shape )
