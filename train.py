@@ -1,6 +1,7 @@
 from model import CaptchaBreaker
 import tensorflow as tf
 import numpy as np
+import random
 import math
 import json
 import cv2
@@ -19,6 +20,7 @@ def load_dataset(data_dir, validation_split=0.8):
     # Get file locations
     data_dir = sys.argv[1]
     sample_paths = [ (os.path.join(data_dir, sample_path), os.path.join(data_dir, sample_path[:-4]+'.json'), sample_path[:-4]) for sample_path in os.listdir(data_dir) if sample_path[-4:] == '.png' ]
+    random.shuffle( sample_paths )
 
     # Load the first sample just to get dimensions
     im_path, _, _ = sample_paths[0] 
@@ -31,13 +33,13 @@ def load_dataset(data_dir, validation_split=0.8):
     X_test  = np.zeros( (N_test,)  + im.shape, dtype='float32' )
     
     # Calculate output dimensions
-    pooling_summary = [2, 2]
+    pooling_summary = [2, 2, 2]
     cell_size = 1 
     h, w, _ = im.shape
     for pooling_factor in pooling_summary:
         cell_size *= pooling_factor
-        w = int( math.ceil(w / pooling_factor) )
-        h = int( math.ceil(h / pooling_factor) )
+        w = int( math.floor(w / pooling_factor) )
+        h = int( math.floor(h / pooling_factor) )
     
     Y_train = np.zeros( (N_train, h, w, 67 + 3) ) # target outputs for the model + training weights for classifier, objectness, and bounding box outputs
     Y_test  = np.zeros( (N_test,  h, w, 67 + 3) )
@@ -95,6 +97,7 @@ if __name__ == '__main__':
     input_dir = sys.argv[1]
     (X_train, Y_train), (X_test, Y_test) = load_dataset(input_dir)
     print('Done')
+    print(X_train.shape, Y_train.shape, X_test.shape, Y_test.shape)
 
     # Compile and fit model
     model = CaptchaBreaker()
@@ -102,4 +105,4 @@ if __name__ == '__main__':
     model.fit(X_train, Y_train, batch_size=100, epochs=10, validation_data=(X_test, Y_test), validation_batch_size=100)
 
     # Save :D
-    model.save('model_snapshots/model_v1')
+    model.save('saves/model_v2')

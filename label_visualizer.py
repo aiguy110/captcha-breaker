@@ -27,9 +27,12 @@ def random_color():
              random.choice(range(128, 256)),
              random.choice(range(128, 256)) )
 
+def rectify(x, N):
+    return min(max(0, int(x)), N)
+
 for rect in label_obj:
-    top_left     = (rect['left'] , rect['top'])
-    bottom_right = (rect['right'], rect['bottom'])
+    top_left     = (rectify(rect['left']) , rectify(rect['top']))
+    bottom_right = (rectify(rect['right']), rectify(rect['bottom']))
     cv2.rectangle(captcha_image, top_left, bottom_right, random_color(), 3)
 
 if len(sys.argv) == 3:

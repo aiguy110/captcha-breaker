@@ -10,18 +10,23 @@ class CaptchaBreaker(tf.keras.Model):
     def __init__(self):
         super(CaptchaBreaker, self).__init__()
         self.backbone_layers = [] 
-        self.backbone_layers.append( layers.Conv2D(32, (3,3), activation='relu', padding='same') )
-        self.backbone_layers.append( layers.BatchNormalization() )
         self.backbone_layers.append( layers.Conv2D(64, (3,3), activation='relu', padding='same') )
-        self.backbone_layers.append( layers.BatchNormalization() )
-        self.backbone_layers.append( layers.MaxPool2D((2,2)) )
-        self.backbone_layers.append( layers.Conv2D(64, (3,3), activation='relu', padding='same') )
-        self.backbone_layers.append( layers.BatchNormalization() )
+        #self.backbone_layers.append( layers.BatchNormalization() )
         self.backbone_layers.append( layers.Conv2D(128, (3,3), activation='relu', padding='same') )
-        self.backbone_layers.append( layers.BatchNormalization() )
+        #self.backbone_layers.append( layers.BatchNormalization() )
         self.backbone_layers.append( layers.MaxPool2D((2,2)) )
         self.backbone_layers.append( layers.Conv2D(128, (3,3), activation='relu', padding='same') )
-        self.backbone_layers.append( layers.BatchNormalization() )
+        #self.backbone_layers.append( layers.BatchNormalization() )
+        self.backbone_layers.append( layers.Conv2D(256, (3,3), activation='relu', padding='same') )
+        #self.backbone_layers.append( layers.BatchNormalization() )
+        self.backbone_layers.append( layers.MaxPool2D((2,2)) )
+        self.backbone_layers.append( layers.Conv2D(256, (3,3), activation='relu', padding='same') )
+        #self.backbone_layers.append( layers.BatchNormalization() )
+        self.backbone_layers.append( layers.Conv2D(256, (3,3), padding='same') ) 
+        #self.backbone_layers.append( layers.BatchNormalization() )
+        self.backbone_layers.append( layers.MaxPool2D((2,2)) )
+        self.backbone_layers.append( layers.Conv2D(256, (3,3), activation='relu', padding='same') )
+        #self.backbone_layers.append( layers.BatchNormalization() )
         self.backbone_layers.append( layers.Conv2D(67, (3,3), padding='same') ) 
 
     def call(self, inputs, training=False):
@@ -89,6 +94,7 @@ class CaptchaBreaker(tf.keras.Model):
     
     @staticmethod
     def yolo_loss(Y_true, Y_pred):
+        #print(Y_true.shape, Y_pred.shape)
         classifier_activations_true = Y_true[:, :, :, :62]
         classifier_logits_pred      = Y_pred[:, :, :, :62]
         classifier_loss_pre_wieghting = tf.nn.softmax_cross_entropy_with_logits(classifier_activations_true, classifier_logits_pred)
