@@ -35,3 +35,6 @@ for rect in label_obj:
 if len(sys.argv) == 3:
     output_path = sys.argv[2]
     cv2.imwrite(output_path, captcha_image)
+else:
+    cv2.imshow('CAPTCHA Label', captcha_image)
+
