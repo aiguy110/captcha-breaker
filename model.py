@@ -40,7 +40,7 @@ class CaptchaBreaker(tf.keras.Model):
             box_offset_factors     = activations.sigmoid( box_offset_slice )
             box_scale_factors      = activations.exponential( box_scale_slice )
 
-            return layers.Concatenate(axis=-1)( [class_logits, objectness_logits, box_offset_factor, box_scale_factors] )
+            return layers.Concatenate(axis=-1)( [class_activations, objectness_activations, box_offset_factors, box_scale_factors] )
         else:
             return x
         
@@ -86,3 +86,22 @@ class CaptchaBreaker(tf.keras.Model):
             return True
         else:
             return False
+    
+    @staticmethod
+    def yolo_loss(Y_true, Y_pred):
+        classifier_activations_true = Y_true[:, :, :, :62]
+        classifier_logits_pred      = Y_pred[:, :, :, :62]
+        classifier_loss_pre_wieghting = tf.nn.softmax_cross_entropy_with_logits(classifier_activations_true, classifier_logits_pred)
+        classifier_loss_final = tf.math.reduce_sum( tf.math.multiply(classifier_loss_pre_wieghting, Y_true[:, :, :, 67]), axis=[1,2] )
+
+        objectness_activations_true = Y_true[:, :, :, 62]
+        objectness_logits_pred      = Y_pred[:, :, :, 62]
+        objectness_loss_pre_wieghting = tf.nn.sigmoid_cross_entropy_with_logits(objectness_activations_true, objectness_logits_pred)
+        objectness_loss_final = tf.math.reduce_sum( tf.math.multiply(objectness_loss_pre_wieghting, Y_true[:, :, :, 68]), axis=[1,2] )
+
+        bounding_box_pre_activations_true = Y_true[:, :, :, 63:67]
+        bounding_box_pre_activations_pred = Y_pred[:, :, :, 63:67]
+        bounding_box_sum_square_diffs = tf.math.reduce_sum( tf.math.square( bounding_box_pre_activations_true - bounding_box_pre_activations_pred ), axis=-1 )
+        bounding_box_loss_final = tf.math.reduce_sum( tf.math.multiply(bounding_box_sum_square_diffs, Y_true[:, :, :, 69]), axis=[1,2] )
+
+        return classifier_loss_final + objectness_loss_final + bounding_box_loss_final

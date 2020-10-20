@@ -85,24 +85,6 @@ def load_dataset(data_dir, validation_split=0.8):
     return (X_train, Y_train), (X_test, Y_test)
 
 
-def yolo_loss(Y_true, Y_pred):
-    classifier_activations_true = Y_true[:, :, :, :62]
-    classifier_logits_pred      = Y_pred[:, :, :, :62]
-    classifier_loss_pre_wieghting = tf.nn.softmax_cross_entropy_with_logits(classifier_activations_true, classifier_logits_pred)
-    classifier_loss_final = tf.math.reduce_sum( tf.math.multiply(classifier_loss_pre_wieghting, Y_true[:, :, :, 67]), axis=[1,2] )
-
-    objectness_activations_true = Y_true[:, :, :, 62]
-    objectness_logits_pred      = Y_pred[:, :, :, 62]
-    objectness_loss_pre_wieghting = tf.nn.sigmoid_cross_entropy_with_logits(objectness_activations_true, objectness_logits_pred)
-    objectness_loss_final = tf.math.reduce_sum( tf.math.multiply(objectness_loss_pre_wieghting, Y_true[:, :, :, 68]), axis=[1,2] )
-
-    bounding_box_pre_activations_true = Y_true[:, :, :, 63:67]
-    bounding_box_pre_activations_pred = Y_pred[:, :, :, 63:67]
-    bounding_box_sum_square_diffs = tf.math.reduce_sum( tf.math.square( bounding_box_pre_activations_true - bounding_box_pre_activations_pred ), axis=-1 )
-    bounding_box_loss_final = tf.math.reduce_sum( tf.math.multiply(bounding_box_sum_square_diffs, Y_true[:, :, :, 69]), axis=[1,2] )
-
-    return classifier_loss_final + objectness_loss_final + bounding_box_loss_final
-
 
 if __name__ == '__main__':
     if len(sys.argv) != 2:
@@ -116,8 +98,8 @@ if __name__ == '__main__':
 
     # Compile and fit model
     model = CaptchaBreaker()
-    model.compile(optimizer='Adam', loss=yolo_loss)
-    model.fit(X_train, Y_train, batch_size=100, epochs=10)
+    model.compile(optimizer='Adam', loss=CaptchaBreaker.yolo_loss)
+    model.fit(X_train, Y_train, batch_size=100, epochs=10, validation_data=(X_test, Y_test), validation_batch_size=100)
 
     # Save :D
-    model.save('model_snapshots/model_v1.mod')
+    model.save('model_snapshots/model_v1')
