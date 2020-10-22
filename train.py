@@ -8,21 +8,18 @@ import cv2
 import sys
 import os
 
-def load_dataset(data_dir, validation_split=0.8):
+def load_dataset(data_dir, random_seed=42):
     # Get file locations
     data_dir = sys.argv[1]
     sample_paths = [ (os.path.join(data_dir, sample_path), os.path.join(data_dir, sample_path[:-4]+'.json'), sample_path[:-4]) for sample_path in os.listdir(data_dir) if sample_path[-4:] == '.png' ]
+    
+    random.seed( random_seed )
     random.shuffle( sample_paths )
 
     # Load the first sample just to get dimensions
     im_path, _, _ = sample_paths[0] 
     im = cv2.imread(im_path)
     N = len(sample_paths)
-    N_train = int(N*validation_split)
-    N_test = N - N_train
-    
-    X_train = np.zeros( (N_train,) + im.shape, dtype='float32' )
-    X_test  = np.zeros( (N_test,)  + im.shape, dtype='float32' )
     
     # Calculate output dimensions
     pooling_summary = [2, 2, 2]
@@ -33,9 +30,6 @@ def load_dataset(data_dir, validation_split=0.8):
         w = int( math.floor(w / pooling_factor) )
         h = int( math.floor(h / pooling_factor) )
     
-    Y_train = np.zeros( (N_train, h, w, 67 + 3) ) # target outputs for the model + training weights for classifier, objectness, and bounding box outputs
-    Y_test  = np.zeros( (N_test,  h, w, 67 + 3) )
-
     # Load the data
     for n, (image_path, label_path, letters) in enumerate(sample_paths):
         X = CaptchaBreaker.load_and_preprocess_image(image_path)
@@ -69,15 +63,7 @@ def load_dataset(data_dir, validation_split=0.8):
                         Y[i, j, 62] = 0 # This was already the value there but lets make it explicit...
                         Y[i, j, 68] = 1
 
-        if n < N_train:
-            X_train[n, :, :, :] = X
-            Y_train[n, :, :, :] = Y
-        else:
-            X_test[n-N_train, :, :, :] = X
-            Y_test[n-N_train, :, :, :] = Y
-
-    return (X_train, Y_train), (X_test, Y_test)
-
+        yield (X, Y)
 
 
 if __name__ == '__main__':
@@ -85,11 +71,7 @@ if __name__ == '__main__':
         print('Usage: python ./train.py <data_dir>')
 
     # Load data
-    print('Loading dataset into memory... ', end='', flush=True)
-    input_dir = sys.argv[1]
-    (X_train, Y_train), (X_test, Y_test) = load_dataset(input_dir)
-    print('Done')
-    print(X_train.shape, Y_train.shape, X_test.shape, Y_test.shape)
+    dataset = tf.data.Dataset.from_generator(load_dataset, output_types=tf.float32)
 
     # Compile and fit model
     model = CaptchaBreaker()
