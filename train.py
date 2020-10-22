@@ -8,14 +8,6 @@ import cv2
 import sys
 import os
 
-def load_and_preprocess_image(image_path):
-    im = cv2.imread(image_path)
-    X = np.zeros(im.shape, dtype='float32')
-    for c in range(3):
-        X[:,:,c] = im[:,:,c] / np.amax(im[:,:,c])
-    
-    return X 
-
 def load_dataset(data_dir, validation_split=0.8):
     # Get file locations
     data_dir = sys.argv[1]
@@ -46,7 +38,7 @@ def load_dataset(data_dir, validation_split=0.8):
 
     # Load the data
     for n, (image_path, label_path, letters) in enumerate(sample_paths):
-        X = load_and_preprocess_image(image_path)
+        X = CaptchaBreaker.load_and_preprocess_image(image_path)
         Y = np.zeros( (h, w, 67 + 3), dtype='float32' )
 
         with open(label_path) as f: 
@@ -102,7 +94,7 @@ if __name__ == '__main__':
     # Compile and fit model
     model = CaptchaBreaker()
     model.compile(optimizer='Adam', loss=CaptchaBreaker.yolo_loss)
-    model.fit(X_train, Y_train, batch_size=100, epochs=10, validation_data=(X_test, Y_test), validation_batch_size=100)
+    model.fit(X_train, Y_train, batch_size=100, epochs=5, validation_data=(X_test, Y_test), validation_batch_size=100)
 
     # Save :D
-    model.save('saves/model_v2')
+    model.save('saves/model_v3')

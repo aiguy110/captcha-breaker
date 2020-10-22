@@ -23,17 +23,17 @@ with open(label_path) as f:
 print(captcha_image.shape)
 
 def random_color():
-    return ( random.choice(range(128, 256)), 
-             random.choice(range(128, 256)),
-             random.choice(range(128, 256)) )
+    return ( random.choice(range(0, 256)), 
+             random.choice(range(0, 256)),
+             random.choice(range(0, 256)) )
 
 def rectify(x, N):
     return min(max(0, int(x)), N)
 
 for rect in label_obj:
-    top_left     = (rectify(rect['left']) , rectify(rect['top']))
-    bottom_right = (rectify(rect['right']), rectify(rect['bottom']))
-    cv2.rectangle(captcha_image, top_left, bottom_right, random_color(), 3)
+    top_left     = (rectify(rect['left'], captcha_image.shape[1]) , rectify(rect['top'], captcha_image.shape[0]))
+    bottom_right = (rectify(rect['right'], captcha_image.shape[1]), rectify(rect['bottom'], captcha_image.shape[0]))
+    cv2.rectangle(captcha_image, top_left, bottom_right, random_color(), 1)
 
 if len(sys.argv) == 3:
     output_path = sys.argv[2]
