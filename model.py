@@ -5,7 +5,7 @@ import tensorflow as tf
 from tensorflow.keras import activations, layers
 
 class CaptchaBreaker(tf.keras.Model):
-    scale_prior = 16
+    scale_prior = 24
     alphanum = string.ascii_lowercase + string.ascii_uppercase + string.digits
 
     def __init__(self):
@@ -74,13 +74,14 @@ class CaptchaBreaker(tf.keras.Model):
         if scale_prior == None:
             scale_prior = CaptchaBreaker.scale_prior
 
-        init_offset = cell_offset[:2] * cell_size
+        cell_center_offset = (cell_offset[:2] + np.array([0.5, 0.5])) * cell_size
+        half_prior_offset = np.array([0.5, 0.5]) * scale_prior
         
         def sigma(x):
             return 1 / ( 1 + np.exp(-x) )
         
-        output_offsets = sigma(arr[:2]) * cell_size
-        full_offset = init_offset + output_offsets 
+        output_offsets = sigma(arr[:2]) * scale_prior
+        full_offset = cell_center_offset - half_prior_offset + output_offsets 
         
         w, h = np.exp(arr[2:]) * scale_prior
         return { 'left': full_offset[0] - w/2, 'right': full_offset[0] + w/2, 'top': full_offset[1] - h/2, 'bottom': full_offset[1] + h/2 }
@@ -94,7 +95,8 @@ class CaptchaBreaker(tf.keras.Model):
         rect_height = rect['bottom'] - rect['top' ]
         scale_pre_activations = np.log( np.array([rect_width, rect_height]) / scale_prior )
 
-        normalized_offset = ( CaptchaBreaker.rect_center( rect ) - cell_offset * cell_size ) / cell_size
+        prior_upper_left_offset = (cell_offset[:2] + np.array([0.5, 0.5]))*cell_size - np.array([0.5, 0.5]) * scale_prior
+        normalized_offset = ( CaptchaBreaker.rect_center( rect ) - prior_upper_left_offset) / scale_prior
         offset_pre_activations = np.log( (1-normalized_offset) / normalized_offset )
 
         return np.concatenate( (offset_pre_activations, scale_pre_activations) )
@@ -111,6 +113,37 @@ class CaptchaBreaker(tf.keras.Model):
         else:
             return False
     
+    @staticmethod
+    def rect_area(rect):
+        return max(rect['right'] - rect['left'], 0) * max(rect['bottom'] - rect['top'], 0)
+
+    @staticmethod
+    def intersect_rect(rect1, rect2):
+        # Note that this will always return a rect even if the input rects do not intersect.
+        # In that case, the rect may be inverted left-to-right or top-to-bottom. rect_area()
+        # knows to handle this situation by returning zero.
+        return {
+            'left'  : max( rect1['left']  , rect2['left']   ),
+            'right' : min( rect1['right'] , rect2['right']  ),
+            'top'   : max( rect1['top']   , rect2['top']    ),
+            'bottom': min( rect1['bottom'], rect2['bottom'] )
+        }
+
+    @staticmethod
+    def intersection_over_union(rect1, rect2):        
+        area1 = CaptchaBreaker.rect_area( rect1 )
+        area2 = CaptchaBreaker.rect_area( rect2 )
+        areax = CaptchaBreaker.rect_area( CaptchaBreaker.intersect_rect(rect1, rect2) )
+
+        return areax / (area1 + area2 - areax)
+    
+    @staticmethod
+    def overlap_fraction(src_rect, dst_rect):
+        src_area = CaptchaBreaker.rect_area( src_rect )
+        int_area = CaptchaBreaker.rect_area( CaptchaBreaker.intersect_rect(src_rect, dst_rect) )
+        
+        return int_area / src_area
+
     @staticmethod
     def yolo_loss(Y_true, Y_pred):
         #print(Y_true.shape, Y_pred.shape)

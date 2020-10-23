@@ -43,29 +43,45 @@ def load_dataset(sample_paths):
         
         for i in range(h):
             for j in range(w):
+                # If the cell prior overlaps the label it overlaps most by over detect_thres, train it to match that label
+                # If the cell prior overlaps the label it overlaps most by over no_detect_thres, but less than detect_thres
+                # this cell gets a free pass (i.e outputs disregarded; no loss incurred). Otherwise, this cell should be trained 
+                # to output an objectness of zero.
+                detect_thres    = 0.6
+                no_detect_thres = 0.4
+                
                 cell_offset = np.array([j, i])
-                cell_rect   = CaptchaBreaker.decode_rect(Y[i, j, 63:67], cell_offset, cell_size, cell_size) # The slice we're taking here will always just be 4 zeros, but hopefully this makes things more readable
-                cell_center = CaptchaBreaker.rect_center(cell_rect)
-
-                # If this cell contains the center of a label rect, train this cell to predict that label rect.
-                # If the cell does not contain the center of the label rect, but the center of the cell is
-                # inside the label rect, this cell gets a free pass (i.e outputs disregarded; no loss incurred)
-                # Otherwise, this cell should be trained to output an objectness of zero.
+                cell_rect   = CaptchaBreaker.decode_rect(Y[i, j, 63:67], cell_offset, cell_size) # The slice we're taking here will always just be 4 zeros, but hopefully this makes it more obvious we're getting the prior for this cell
+                
+                best_label_rect = None
+                best_label_ind = None
+                best_label_overlap = 0
                 for l, label_rect in enumerate(label_data):
-                    if CaptchaBreaker.point_is_inside_rect( CaptchaBreaker.rect_center(label_rect), cell_rect ):
-                        letter_ind = CaptchaBreaker.alphanum.index( letters[l] ) 
-                        Y[i, j, letter_ind] = 1
-                        Y[i, j, 62]         = 1
-                        Y[i, j, 63:67]      = CaptchaBreaker.encode_rect(label_rect, cell_offset, cell_size)
-                        Y[i, j, 67:]        = [1, 1, 1]
-                        break
-                    elif CaptchaBreaker.point_is_inside_rect(cell_center, label_rect):
-                        Y[i, j, 67:] = [0, 0, 0]
-                        break
-                    else:
-                        Y[i, j, 62] = 0 # This was already the value there but lets make it explicit...
-                        Y[i, j, 68] = 1
+                    label_overlap = CaptchaBreaker.overlap_fraction(cell_rect, label_rect)
+                    if label_overlap > best_label_overlap:
+                        best_label_overlap = label_overlap
+                        best_label_ind, best_label_rect = l, label_rect
+                
+                if best_label_overlap > detect_thres and CaptchaBreaker.point_is_inside_rect(CaptchaBreaker.rect_center(label_rect), cell_rect):
+                    # print(cell_rect, best_label_rect)
+                    # print(CaptchaBreaker.intersect_rect(cell_rect, best_label_rect))
+                    # print(CaptchaBreaker.rect_area(CaptchaBreaker.intersect_rect(cell_rect, best_label_rect)))
+                    # print(CaptchaBreaker.overlap_fraction(cell_rect, best_label_rect))
+                    # print(CaptchaBreaker.encode_rect(best_label_rect, cell_offset, cell_size))
+                    letter_ind = CaptchaBreaker.alphanum.index( letters[best_label_ind] ) 
+                    Y[i, j, letter_ind] = 1
+                    Y[i, j, 62]         = 1
+                    Y[i, j, 63:67]      = CaptchaBreaker.encode_rect(best_label_rect, cell_offset, cell_size)
+                    Y[i, j, 67:]        = [1, 1, 1]
+                elif best_label_overlap > no_detect_thres:
+                    Y[i, j, 67:] = [0, 0, 0]
+                else:
+                    Y[i, j, 62] = 0 # This was already the value there but lets make it explicit...
+                    Y[i, j, 68] = 1
 
+        with open('/tmp/Y.npz', 'wb') as f:
+            np.save(f, Y)
+        
         yield X, Y
 
 def get_dataset_dims_from_generator(gen, args=[]):
@@ -108,9 +124,9 @@ if __name__ == '__main__':
     model = CaptchaBreaker()
     model.compile(optimizer='Adam', loss=CaptchaBreaker.yolo_loss)
     model.fit(
-        train_dataset.batch(20), 
+        train_dataset.batch(40), 
         epochs=5,
-        validation_data=test_dataset.batch(20) )
+        validation_data=test_dataset.batch(40) )
 
     # Save :D
     model.save('saves/model_v3')
