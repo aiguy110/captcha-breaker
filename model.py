@@ -11,25 +11,47 @@ class CaptchaBreaker(tf.keras.Model):
     def __init__(self):
         super(CaptchaBreaker, self).__init__()
         self.backbone_layers = [] 
-        # self.backbone_layers.append( layers.Conv2D(64, (3,3), activation='relu', padding='same') )
-        # self.backbone_layers.append( layers.Conv2D(128, (3,3), activation='relu', padding='same') )
-        # self.backbone_layers.append( layers.Conv2D(128, (3,3), activation='relu', padding='same') )
+        self.backbone_layers.append( layers.Conv2D(128, (5,5), activation='relu', padding='same') )
+        self.backbone_layers.append( layers.Conv2D(128, (3,3), activation='relu', padding='same') )
+        self.backbone_layers.append( layers.Conv2D(128, (1,1), activation='relu', padding='same') )
+        self.backbone_layers.append( layers.Conv2D(128, (3,3), activation='relu', padding='same') )
         self.backbone_layers.append( layers.MaxPool2D((2,2)) )
-        # self.backbone_layers.append( layers.Conv2D(128, (3,3), activation='relu', padding='same') )
-        # self.backbone_layers.append( layers.Conv2D(256, (3,3), activation='relu', padding='same') )
-        # self.backbone_layers.append( layers.Conv2D(256, (3,3), activation='relu', padding='same') )
+        self.backbone_layers.append( layers.Conv2D(128, (3,3), activation='relu', padding='same') )
+        self.backbone_layers.append( layers.Conv2D(128, (1,1), activation='relu', padding='same') )
+        self.backbone_layers.append( layers.Conv2D(256, (3,3), activation='relu', padding='same') )
+        self.backbone_layers.append( layers.Conv2D(256, (3,3), activation='relu', padding='same') )
         self.backbone_layers.append( layers.MaxPool2D((2,2)) )
-        # self.backbone_layers.append( layers.Conv2D(256, (3,3), activation='relu', padding='same') )
-        # self.backbone_layers.append( layers.Conv2D(512, (3,3), padding='same') ) 
-        # self.backbone_layers.append( layers.Conv2D(512, (3,3), padding='same') ) 
+        self.backbone_layers.append( layers.Conv2D(256, (3,3), activation='relu', padding='same') )
+        self.backbone_layers.append( layers.Conv2D(256, (1,1), activation='relu', padding='same') )
+        self.backbone_layers.append( layers.Conv2D(512, (3,3), padding='same') ) 
+        self.backbone_layers.append( layers.Conv2D(512, (1,1), activation='relu', padding='same') )
+        self.backbone_layers.append( layers.Conv2D(512, (3,3), padding='same') ) 
         self.backbone_layers.append( layers.MaxPool2D((2,2)) )
-        # self.backbone_layers.append( layers.Conv2D(512, (3,3), activation='relu', padding='same') )
+        self.backbone_layers.append( layers.Conv2D(512, (3,3), activation='relu', padding='same') )
+        self.backbone_layers.append( layers.Conv2D(512, (1,1), activation='relu', padding='same') )
         self.backbone_layers.append( layers.Conv2D(67, (3,3), padding='same') )
 
     def call(self, inputs, training=False):
+        # Build model, and print memory usage info
+        model_bytes = 0
+        per_sample_bytes = 0
         x = inputs
         for layer in self.backbone_layers:
             x = layer(x)
+            # Compute per-sample memory requirements to store this layers outputs
+            elements = 1
+            for dim in x.shape[1:]:
+                elements *= dim
+            per_sample_bytes += elements * x.dtype.size
+
+            # Compute parameter memory requirements of this layer
+            for tf_var in layer.weights:
+                elements = 1
+                for dim in tf_var.shape:
+                    elements *= dim
+                model_bytes += elements * tf_var.dtype.size
+        print(f'Model parameters require {model_bytes} bytes of memory. An additional {per_sample_bytes} bytes is required')
+        print(f'for each sample in a batch (not including the input and target tensors themselves).')
         
         if not training:
             class_slice      = x[:,:,:,  :62] # 26*2 letters + 10 digits

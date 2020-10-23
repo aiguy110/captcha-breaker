@@ -108,9 +108,9 @@ if __name__ == '__main__':
     model = CaptchaBreaker()
     model.compile(optimizer='Adam', loss=CaptchaBreaker.yolo_loss)
     model.fit(
-        train_dataset.batch(100), 
-        epochs=2, 
-        validation_data=test_dataset.batch(100) )
+        train_dataset.batch(20), 
+        epochs=5,
+        validation_data=test_dataset.batch(20) )
 
     # Save :D
     model.save('saves/model_v3')
