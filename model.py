@@ -2,34 +2,53 @@ import cv2
 import string
 import numpy as np
 import tensorflow as tf
-from tensorflow.keras import activations, layers
+
+class ResBlock(tf.keras.Model): # [x] Conv2d-1x1-n1 -> Conv2d-3x3-n2 + x 
+    def __init__(self, n1, n2):
+        super(ResBlock, self).__init__(self)
+        self.sub_layers = [
+            tf.keras.layers.Conv2D(n1, (1,1), padding='same'),
+            tf.keras.layers.LeakyReLU(alpha=0.1),
+            tf.keras.layers.Conv2D(n2, (3,3), padding='same'),
+            tf.keras.layers.LeakyReLU(alpha=0.1),
+        ]
+
+        # self.weights = []
+        # for layer in self.sub_layers:
+        #     self.weights += layer.weights
+    
+    def call(self, input_tensor):
+        x = input_tensor
+        for layer in self.sub_layers:
+            x = layer(x)
+        return tf.keras.layers.Add()([x, input_tensor])
 
 class CaptchaBreaker(tf.keras.Model):
     scale_prior = 24
-    alphanum = string.ascii_lowercase + string.ascii_uppercase + string.digits
+    label_ind_lookup = ['square', 'circle', 'triangle'] #string.ascii_lowercase + string.ascii_uppercase + string.digits
 
     def __init__(self):
         super(CaptchaBreaker, self).__init__()
         self.backbone_layers = [] 
-        self.backbone_layers.append( layers.Conv2D(128, (5,5), activation='relu', padding='same') )
-        self.backbone_layers.append( layers.Conv2D(128, (3,3), activation='relu', padding='same') )
-        self.backbone_layers.append( layers.Conv2D(128, (1,1), activation='relu', padding='same') )
-        self.backbone_layers.append( layers.Conv2D(128, (3,3), activation='relu', padding='same') )
-        self.backbone_layers.append( layers.MaxPool2D((2,2)) )
-        self.backbone_layers.append( layers.Conv2D(128, (3,3), activation='relu', padding='same') )
-        self.backbone_layers.append( layers.Conv2D(128, (1,1), activation='relu', padding='same') )
-        self.backbone_layers.append( layers.Conv2D(256, (3,3), activation='relu', padding='same') )
-        self.backbone_layers.append( layers.Conv2D(256, (3,3), activation='relu', padding='same') )
-        self.backbone_layers.append( layers.MaxPool2D((2,2)) )
-        self.backbone_layers.append( layers.Conv2D(256, (3,3), activation='relu', padding='same') )
-        self.backbone_layers.append( layers.Conv2D(256, (1,1), activation='relu', padding='same') )
-        self.backbone_layers.append( layers.Conv2D(512, (3,3), padding='same') ) 
-        self.backbone_layers.append( layers.Conv2D(512, (1,1), activation='relu', padding='same') )
-        self.backbone_layers.append( layers.Conv2D(512, (3,3), padding='same') ) 
-        self.backbone_layers.append( layers.MaxPool2D((2,2)) )
-        self.backbone_layers.append( layers.Conv2D(512, (3,3), activation='relu', padding='same') )
-        self.backbone_layers.append( layers.Conv2D(512, (1,1), activation='relu', padding='same') )
-        self.backbone_layers.append( layers.Conv2D(67, (3,3), padding='same') )
+        self.backbone_layers.append( tf.keras.layers.Conv2D(64, (5,5), padding='same') )
+        self.backbone_layers.append( tf.keras.layers.LeakyReLU(alpha=0.1) )
+        self.backbone_layers.append( tf.keras.layers.Conv2D(64, (3,3), padding='same') )
+        self.backbone_layers.append( tf.keras.layers.LeakyReLU(alpha=0.1) )
+        self.backbone_layers.append( tf.keras.layers.MaxPool2D((2,2)) )
+        
+        for i in range(2):
+            self.backbone_layers.append( ResBlock(32, 64) )
+        self.backbone_layers.append( tf.keras.layers.Conv2D(128, (3,3), padding='same') )
+        self.backbone_layers.append( tf.keras.layers.LeakyReLU(alpha=0.1) )
+        self.backbone_layers.append( tf.keras.layers.MaxPool2D((2,2)) )
+        
+        for i in range(4):
+            self.backbone_layers.append( ResBlock(64, 128) )
+        self.backbone_layers.append( tf.keras.layers.Conv2D(256, (3,3), padding='same') )
+        self.backbone_layers.append( tf.keras.layers.LeakyReLU(alpha=0.1) )
+        self.backbone_layers.append( tf.keras.layers.MaxPool2D((2,2)) )
+
+        self.backbone_layers.append( tf.keras.layers.Conv2D(67, (3,3), padding='same') )
 
     def call(self, inputs, training=False):
         # Build model, and print memory usage info
@@ -50,8 +69,9 @@ class CaptchaBreaker(tf.keras.Model):
                 for dim in tf_var.shape:
                     elements *= dim
                 model_bytes += elements * tf_var.dtype.size
-        print(f'Model parameters require {model_bytes} bytes of memory. An additional {per_sample_bytes} bytes is required')
-        print(f'for each sample in a batch (not including the input and target tensors themselves).')
+        if training:
+            print(f'Model parameters require {model_bytes} bytes of memory. An additional {per_sample_bytes} bytes is required')
+            print(f'for each sample in a batch (not including the input and target tensors themselves).')
         
         if not training:
             class_slice      = x[:,:,:,  :62] # 26*2 letters + 10 digits
@@ -59,12 +79,12 @@ class CaptchaBreaker(tf.keras.Model):
             box_offset_slice = x[:,:,:,63:65] # (x, y) detection box offset factors from center of cell 
             box_scale_slice  = x[:,:,:,65:67] # (w, h) detection box scale factors
 
-            class_activations      = activations.softmax( class_slice )
-            objectness_activations = activations.sigmoid( objectness_slice )
+            class_activations      = tf.keras.activations.softmax( class_slice )
+            objectness_activations = tf.keras.activations.sigmoid( objectness_slice )
             box_offset_factors     = box_offset_slice#activations.sigmoid( box_offset_slice )
             box_scale_factors      = box_scale_slice#activations.exponential( box_scale_slice )
 
-            return layers.Concatenate(axis=-1)( [class_activations, objectness_activations, box_offset_factors, box_scale_factors] )
+            return tf.keras.layers.Concatenate(axis=-1)( [class_activations, objectness_activations, box_offset_factors, box_scale_factors] )
         else:
             return x
         
@@ -97,7 +117,12 @@ class CaptchaBreaker(tf.keras.Model):
 
         prior_upper_left_offset = (cell_offset[:2] + np.array([0.5, 0.5]))*cell_size - np.array([0.5, 0.5]) * scale_prior
         normalized_offset = ( CaptchaBreaker.rect_center( rect ) - prior_upper_left_offset) / scale_prior
-        offset_pre_activations = np.log( (1-normalized_offset) / normalized_offset )
+        
+        epsilon = 0.001
+        normalized_offset = np.maximum( normalized_offset, [  epsilon,   epsilon] )
+        normalized_offset = np.minimum( normalized_offset, [1-epsilon, 1-epsilon] )
+
+        offset_pre_activations = - np.log( (1-normalized_offset) / normalized_offset )
 
         return np.concatenate( (offset_pre_activations, scale_pre_activations) )
 
@@ -146,7 +171,6 @@ class CaptchaBreaker(tf.keras.Model):
 
     @staticmethod
     def yolo_loss(Y_true, Y_pred):
-        #print(Y_true.shape, Y_pred.shape)
         classifier_activations_true = Y_true[:, :, :, :62]
         classifier_logits_pred      = Y_pred[:, :, :, :62]
         classifier_loss_pre_wieghting = tf.nn.softmax_cross_entropy_with_logits(classifier_activations_true, classifier_logits_pred)

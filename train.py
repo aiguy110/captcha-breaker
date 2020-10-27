@@ -61,29 +61,21 @@ def load_dataset(sample_paths):
                     if label_overlap > best_label_overlap:
                         best_label_overlap = label_overlap
                         best_label_ind, best_label_rect = l, label_rect
-                
+
                 if best_label_overlap > detect_thres and CaptchaBreaker.point_is_inside_rect(CaptchaBreaker.rect_center(label_rect), cell_rect):
-                    # print(cell_rect, best_label_rect)
-                    # print(CaptchaBreaker.intersect_rect(cell_rect, best_label_rect))
-                    # print(CaptchaBreaker.rect_area(CaptchaBreaker.intersect_rect(cell_rect, best_label_rect)))
-                    # print(CaptchaBreaker.overlap_fraction(cell_rect, best_label_rect))
-                    # print(CaptchaBreaker.encode_rect(best_label_rect, cell_offset, cell_size))
-                    letter_ind = CaptchaBreaker.alphanum.index( letters[best_label_ind] ) 
-                    Y[i, j, letter_ind] = 1
+                    catagory_ind = CaptchaBreaker.label_ind_lookup.index( label_rect['label'] ) 
+                    Y[i, j, catagory_ind] = 1
                     Y[i, j, 62]         = 1
                     Y[i, j, 63:67]      = CaptchaBreaker.encode_rect(best_label_rect, cell_offset, cell_size)
-                    Y[i, j, 67:]        = [1, 1, 1]
+                    Y[i, j, 67:]        = [1, 10, 1]
                 elif best_label_overlap > no_detect_thres:
                     Y[i, j, 67:] = [0, 0, 0]
                 else:
                     Y[i, j, 62] = 0 # This was already the value there but lets make it explicit...
                     Y[i, j, 68] = 1
 
-        with open('/tmp/Y.npz', 'wb') as f:
-            np.save(f, Y)
-        
         yield X, Y
-
+    
 def get_dataset_dims_from_generator(gen, args=[]):
     g = gen(*args)
     return tuple( map(lambda x:x.shape, next(g)) )
@@ -94,7 +86,8 @@ def make_train_and_test_datasets(data_dir, validation_split=0.8):
         data_dir = data_dir.decode()
     sample_paths = [ (os.path.join(data_dir, sample_path), os.path.join(data_dir, sample_path[:-4]+'.json'), sample_path[:-4]) for sample_path in os.listdir(data_dir) if sample_path[-4:] == '.png' ]
     random.shuffle( sample_paths )
-
+    
+    # Create tf.data.Dataset objects
     N_train = int(len(sample_paths) * validation_split)
     train_sample_paths = sample_paths[:N_train]    
     train_dataset = tf.data.Dataset.from_generator(
@@ -110,7 +103,17 @@ def make_train_and_test_datasets(data_dir, validation_split=0.8):
         output_types=(tf.float32, tf.float32),
         output_shapes=get_dataset_dims_from_generator(load_dataset, [test_sample_paths]))
     
+    # Log paths to images used in training and validation
+    with open('train_image_paths.txt', 'w') as f:
+        for image_path, _, _ in sample_paths[:N_train]:
+            f.write(f'{image_path}\n')
+
+    with open('test_image_paths.txt', 'w') as f:
+        for image_path, _, _ in sample_paths[N_train:]:
+            f.write(f'{image_path}\n')
+        
     return train_dataset, test_dataset
+
 
 if __name__ == '__main__':
     if len(sys.argv) != 2:
@@ -124,9 +127,9 @@ if __name__ == '__main__':
     model = CaptchaBreaker()
     model.compile(optimizer='Adam', loss=CaptchaBreaker.yolo_loss)
     model.fit(
-        train_dataset.batch(40), 
+        train_dataset.batch(100), 
         epochs=5,
-        validation_data=test_dataset.batch(40) )
+        validation_data=test_dataset.batch(100) )
 
     # Save :D
-    model.save('saves/model_v3')
+    model.save('saves/model_v3.1')

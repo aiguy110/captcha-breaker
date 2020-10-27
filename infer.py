@@ -9,7 +9,7 @@ import sys
 im = model.CaptchaBreaker.load_and_preprocess_image(sys.argv[1])
 input_data = im[np.newaxis, :,:,:]
 
-my_model = models.load_model('saves/model_v3', custom_objects={'yolo_loss': model.CaptchaBreaker.yolo_loss})
+my_model = models.load_model('saves/model_v3.1', custom_objects={'yolo_loss': model.CaptchaBreaker.yolo_loss})
 model_output = my_model.predict(input_data)
 
 objectness_thres = 0.2
@@ -24,7 +24,7 @@ for i in range(model_output.shape[1]):
                 if model_output[0, i, j, l] > highest_val:
                     highest_val = model_output[0, i, j, l]
                     highest_ind = l
-            detection['letter'] = model.CaptchaBreaker.alphanum[highest_ind]
+            detection['letter'] = model.CaptchaBreaker.label_ind_lookup[highest_ind]
             detection['objectness'] = float(model_output[0, i, j, 62])
             detections.append( detection )
 
