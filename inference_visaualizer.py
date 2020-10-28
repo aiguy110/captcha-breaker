@@ -35,21 +35,7 @@ for image_path in image_paths:
     model_output = model.predict( input_data )
     
     # Extract predictions from model output
-    objectness_thres = 0.2
-    detections = []
-    for i in range(model_output.shape[1]):
-        for j in range(model_output.shape[2]):
-            if model_output[0, i, j, 62] > objectness_thres:
-                detection = CaptchaBreaker.decode_rect(model_output[0, i, j, 63:], np.array([j, i], dtype='int'), 8)
-                highest_val = 0
-                highest_ind = 0
-                for l in range(62):
-                    if model_output[0, i, j, l] > highest_val:
-                        highest_val = model_output[0, i, j, l]
-                        highest_ind = l
-                detection['letter'] = CaptchaBreaker.label_ind_lookup[highest_ind]
-                detection['objectness'] = float(model_output[0, i, j, 62])
-                detections.append( detection )
+    detections = CaptchaBreaker.parse_model_output( model_output )
 
     # Draw the predictions on the image and display
     for rect in detections:

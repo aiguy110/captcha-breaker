@@ -196,3 +196,57 @@ class CaptchaBreaker(tf.keras.Model):
             X[:,:,c] = im[:,:,c] / np.amax(im[:,:,c])
         
         return X 
+    
+    @staticmethod
+    def mix_rects(rect1, rect2, alpha=0.5):
+        return {
+            'left'  : rect1['left']  *(1-alpha) + rect2['left']  *alpha,
+            'right' : rect1['right'] *(1-alpha) + rect2['right'] *alpha,
+            'top'   : rect1['top']   *(1-alpha) + rect2['top']   *alpha,
+            'bottom': rect1['bottom']*(1-alpha) + rect1['bottom']*alpha
+        }
+
+    @staticmethod
+    def parse_model_output(model_output):
+        # Extract non-negligible predictions from model output
+        objectness_thres = 0.2
+        detections = []
+        for i in range(model_output.shape[1]):
+            for j in range(model_output.shape[2]):
+                if model_output[0, i, j, 62] > objectness_thres:
+                    detection = CaptchaBreaker.decode_rect(model_output[0, i, j, 63:], np.array([j, i], dtype='int'), 8)
+                    highest_val = 0
+                    highest_ind = 0
+                    for l in range(62):
+                        if model_output[0, i, j, l] > highest_val:
+                            highest_val = model_output[0, i, j, l]
+                            highest_ind = l
+                    detection['letter'] = CaptchaBreaker.label_ind_lookup[highest_ind]
+                    detection['objectness'] = float(model_output[0, i, j, 62])
+                    detections.append( detection )
+        
+        return detections
+
+        # The Plan:
+        # * Find all intersections with int'-over-union above a certain "conflict" threshold, and sort by that factor
+        # * Search for detections to merge, starting with the strongest intersections
+        #   * In order to be merged, detections must agree in label and have intersection strenge over some "merge" threshold
+        #   * The final detection rect is a combination of the input rects weighted by objectness
+        #   * The final objectness satisfies 1-Of == (1-O1)*(1-O2). This means the resultant objectness is always higher than either input, and is highest when both inputs were already high
+        #   * The whole process is started over after every merge
+        # * If there are no detections to merge, take the strongest remaining conflict, and drop the detection with the lowest objectness
+        #   * Restart the whole process after every deletion. We have to re-assess the conflicting intersections as there may not be any now, even if there were multiple before
+        # * The process terminates when there are no remaining intersections above the conflict threshold
+        conflict_thres = 0.2
+        merge_thres    = 0.7
+        
+        done = False
+        while not done:
+            done = True
+            intersections = []
+            for i in range(len(detections)):
+                for j in range(i+1, len(detections)):
+                    int_factor = CaptchaBreaker.intersection_over_union(detections[i], detections[j])
+                    if int_factor >= conflict_thres:
+                        intersections.append( (int_factor, detections[i], detections[j]) )
+            # Todo: Sort it

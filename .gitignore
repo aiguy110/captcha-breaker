@@ -1,2 +1,4 @@
 __pycache__
 .vscode
+train_image_paths.txt
+test_image_paths.txt
