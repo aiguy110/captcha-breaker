@@ -42,6 +42,7 @@ for image_path in image_paths:
         top_left     = (rectify(rect['left'], im.shape[1]) , rectify(rect['top'], im.shape[0]))
         bottom_right = (rectify(rect['right'], im.shape[1]), rectify(rect['bottom'], im.shape[0]))
         cv2.rectangle(im, top_left, bottom_right, random_color(), 1)
+        cv2.putText(im, rect['label'], (top_left[0]+3, bottom_right[1]-3), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0,0,0))
     
     cv2.imshow('Prediction', im)
     cv2.waitKey()

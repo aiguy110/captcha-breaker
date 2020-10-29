@@ -10,44 +10,45 @@ class ResBlock(tf.keras.Model): # [x] Conv2d-1x1-n1 -> Conv2d-3x3-n2 + x
             tf.keras.layers.Conv2D(n1, (1,1), padding='same'),
             tf.keras.layers.LeakyReLU(alpha=0.1),
             tf.keras.layers.Conv2D(n2, (3,3), padding='same'),
-            tf.keras.layers.LeakyReLU(alpha=0.1),
         ]
-
-        # self.weights = []
-        # for layer in self.sub_layers:
-        #     self.weights += layer.weights
+        self.final_activation = tf.keras.layers.LeakyReLU(alpha=0.1)
     
     def call(self, input_tensor):
         x = input_tensor
         for layer in self.sub_layers:
             x = layer(x)
-        return tf.keras.layers.Add()([x, input_tensor])
+        return self.final_activation( tf.keras.layers.Add()([x, input_tensor]) ) 
 
 class CaptchaBreaker(tf.keras.Model):
     scale_prior = 24
-    label_ind_lookup = ['square', 'circle', 'triangle'] #string.ascii_lowercase + string.ascii_uppercase + string.digits
+    label_ind_lookup = string.ascii_lowercase + string.ascii_uppercase + string.digits
 
     def __init__(self):
         super(CaptchaBreaker, self).__init__()
         self.backbone_layers = [] 
-        self.backbone_layers.append( tf.keras.layers.Conv2D(64, (5,5), padding='same') )
+        self.backbone_layers.append( tf.keras.layers.Conv2D(64*3//2, (5,5), padding='same') )
         self.backbone_layers.append( tf.keras.layers.LeakyReLU(alpha=0.1) )
-        self.backbone_layers.append( tf.keras.layers.Conv2D(64, (3,3), padding='same') )
+        
+        for i in range(5):
+            self.backbone_layers.append( ResBlock(32*3//2, 64*3//2) )
+        self.backbone_layers.append( tf.keras.layers.Conv2D(128*3//2, (3,3), padding='same') )
         self.backbone_layers.append( tf.keras.layers.LeakyReLU(alpha=0.1) )
         self.backbone_layers.append( tf.keras.layers.MaxPool2D((2,2)) )
         
-        for i in range(2):
-            self.backbone_layers.append( ResBlock(32, 64) )
-        self.backbone_layers.append( tf.keras.layers.Conv2D(128, (3,3), padding='same') )
+        for i in range(5):
+            self.backbone_layers.append( ResBlock(64*3//2, 128*3//2) )
+        self.backbone_layers.append( tf.keras.layers.Conv2D(256*3//2, (3,3), padding='same') )
         self.backbone_layers.append( tf.keras.layers.LeakyReLU(alpha=0.1) )
         self.backbone_layers.append( tf.keras.layers.MaxPool2D((2,2)) )
         
-        for i in range(4):
-            self.backbone_layers.append( ResBlock(64, 128) )
-        self.backbone_layers.append( tf.keras.layers.Conv2D(256, (3,3), padding='same') )
+        for i in range(10):
+            self.backbone_layers.append( ResBlock(128*3//2, 256*3//2) )
+        self.backbone_layers.append( tf.keras.layers.Conv2D(1024, (3,3), padding='same') )
         self.backbone_layers.append( tf.keras.layers.LeakyReLU(alpha=0.1) )
         self.backbone_layers.append( tf.keras.layers.MaxPool2D((2,2)) )
 
+        self.backbone_layers.append( tf.keras.layers.Conv2D(512, (1,1), padding='same') )
+        self.backbone_layers.append( tf.keras.layers.LeakyReLU(alpha=0.1) )
         self.backbone_layers.append( tf.keras.layers.Conv2D(67, (3,3), padding='same') )
 
     def call(self, inputs, training=False):
@@ -73,7 +74,7 @@ class CaptchaBreaker(tf.keras.Model):
             print(f'Model parameters require {model_bytes} bytes of memory. An additional {per_sample_bytes} bytes is required')
             print(f'for each sample in a batch (not including the input and target tensors themselves).')
         
-        if not training:
+        if False:#not training:
             class_slice      = x[:,:,:,  :62] # 26*2 letters + 10 digits
             objectness_slice = x[:,:,:,62:63] # objectness
             box_offset_slice = x[:,:,:,63:65] # (x, y) detection box offset factors from center of cell 
@@ -171,20 +172,26 @@ class CaptchaBreaker(tf.keras.Model):
 
     @staticmethod
     def yolo_loss(Y_true, Y_pred):
+        tf.debugging.check_numerics(Y_true, "Label tensor contained non-numerics")
+        tf.debugging.check_numerics(Y_pred, "Prediction tensor contained non-numerics")
+
         classifier_activations_true = Y_true[:, :, :, :62]
         classifier_logits_pred      = Y_pred[:, :, :, :62]
         classifier_loss_pre_wieghting = tf.nn.softmax_cross_entropy_with_logits(classifier_activations_true, classifier_logits_pred)
         classifier_loss_final = tf.math.reduce_sum( tf.math.multiply(classifier_loss_pre_wieghting, Y_true[:, :, :, 67]), axis=[1,2] )
+        tf.debugging.check_numerics(classifier_loss_pre_wieghting, "Class softmax cross entropy output contained non-numerics")
 
         objectness_activations_true = Y_true[:, :, :, 62]
         objectness_logits_pred      = Y_pred[:, :, :, 62]
         objectness_loss_pre_wieghting = tf.nn.sigmoid_cross_entropy_with_logits(objectness_activations_true, objectness_logits_pred)
         objectness_loss_final = tf.math.reduce_sum( tf.math.multiply(objectness_loss_pre_wieghting, Y_true[:, :, :, 68]), axis=[1,2] )
+        tf.debugging.check_numerics(objectness_loss_pre_wieghting, "Objectness sigmoid cross entropy output contained non-numerics")
 
         bounding_box_pre_activations_true = Y_true[:, :, :, 63:67]
         bounding_box_pre_activations_pred = Y_pred[:, :, :, 63:67]
         bounding_box_sum_square_diffs = tf.math.reduce_sum( tf.math.square( bounding_box_pre_activations_true - bounding_box_pre_activations_pred ), axis=-1 )
         bounding_box_loss_final = tf.math.reduce_sum( tf.math.multiply(bounding_box_sum_square_diffs, Y_true[:, :, :, 69]), axis=[1,2] )
+        tf.debugging.check_numerics(bounding_box_sum_square_diffs, "Bounding box sum of square differences output contained non-numerics")
 
         return classifier_loss_final + objectness_loss_final + bounding_box_loss_final
     
@@ -203,17 +210,20 @@ class CaptchaBreaker(tf.keras.Model):
             'left'  : rect1['left']  *(1-alpha) + rect2['left']  *alpha,
             'right' : rect1['right'] *(1-alpha) + rect2['right'] *alpha,
             'top'   : rect1['top']   *(1-alpha) + rect2['top']   *alpha,
-            'bottom': rect1['bottom']*(1-alpha) + rect1['bottom']*alpha
+            'bottom': rect1['bottom']*(1-alpha) + rect2['bottom']*alpha
         }
 
     @staticmethod
     def parse_model_output(model_output):
         # Extract non-negligible predictions from model output
+        def sigmoid(x):
+            return 1 / ( 1 + np.exp(-x) )
+
         objectness_thres = 0.2
         detections = []
         for i in range(model_output.shape[1]):
             for j in range(model_output.shape[2]):
-                if model_output[0, i, j, 62] > objectness_thres:
+                if sigmoid(model_output[0, i, j, 62]) > objectness_thres:
                     detection = CaptchaBreaker.decode_rect(model_output[0, i, j, 63:], np.array([j, i], dtype='int'), 8)
                     highest_val = 0
                     highest_ind = 0
@@ -221,32 +231,66 @@ class CaptchaBreaker(tf.keras.Model):
                         if model_output[0, i, j, l] > highest_val:
                             highest_val = model_output[0, i, j, l]
                             highest_ind = l
-                    detection['letter'] = CaptchaBreaker.label_ind_lookup[highest_ind]
-                    detection['objectness'] = float(model_output[0, i, j, 62])
+                    detection['label'] = CaptchaBreaker.label_ind_lookup[highest_ind]
+                    detection['objectness'] = float( sigmoid(model_output[0, i, j, 62]) )
                     detections.append( detection )
-        
-        return detections
 
         # The Plan:
         # * Find all intersections with int'-over-union above a certain "conflict" threshold, and sort by that factor
         # * Search for detections to merge, starting with the strongest intersections
-        #   * In order to be merged, detections must agree in label and have intersection strenge over some "merge" threshold
+        #   * In order to be merged, detections must agree in label and have intersection strength over some "merge" threshold
         #   * The final detection rect is a combination of the input rects weighted by objectness
         #   * The final objectness satisfies 1-Of == (1-O1)*(1-O2). This means the resultant objectness is always higher than either input, and is highest when both inputs were already high
         #   * The whole process is started over after every merge
         # * If there are no detections to merge, take the strongest remaining conflict, and drop the detection with the lowest objectness
         #   * Restart the whole process after every deletion. We have to re-assess the conflicting intersections as there may not be any now, even if there were multiple before
         # * The process terminates when there are no remaining intersections above the conflict threshold
-        conflict_thres = 0.2
+        conflict_thres = 0.3
         merge_thres    = 0.7
         
         done = False
         while not done:
             done = True
+            
+            # Get sorted intersections
             intersections = []
             for i in range(len(detections)):
                 for j in range(i+1, len(detections)):
-                    int_factor = CaptchaBreaker.intersection_over_union(detections[i], detections[j])
+                    int_factor = max(CaptchaBreaker.overlap_fraction(detections[i], detections[j]), CaptchaBreaker.overlap_fraction(detections[j], detections[i]))
                     if int_factor >= conflict_thres:
-                        intersections.append( (int_factor, detections[i], detections[j]) )
-            # Todo: Sort it
+                        intersections.append( (CaptchaBreaker.intersection_over_union(detections[i], detections[j]), i, j) )
+            intersections.sort(key=lambda x:x[0], reverse=True)
+
+            # Can we merge any?
+            start_over = False
+            for int_factor, i, j in intersections:
+                if int_factor >= merge_thres and detections[i]['label'] == detections[j]['label']:
+                    o1 = detections[i]['objectness']
+                    o2 = detections[j]['objectness']
+                    epsilon = 0.00001 
+                    mix_factor = (1-o1) / (1-o1 + 1-o2 + epsilon) # The farther o1 is from 1 compared to their combined distance from one, the more the resultant will favor detection[j]
+                    
+                    merged_detection = CaptchaBreaker.mix_rects(detections[i], detections[j], mix_factor)
+                    merged_detection['label'] = detections[i]['label']
+                    merged_detection['objectness'] = 1 - (1-o1)*(1-o2)
+                    detections.append( merged_detection )
+
+                    del detections[j]
+                    del detections[i]
+
+                    start_over = True
+                    break
+            if start_over:
+                done = False
+                continue
+
+            # Let them fight!
+            if len(intersections) > 0:
+                done = False
+                _, i, j = intersections[0]
+                if detections[i]['objectness'] > detections[j]['objectness']:
+                    del detections[j]
+                else:
+                    del detections[i]
+        
+        return detections

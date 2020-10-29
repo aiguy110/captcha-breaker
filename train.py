@@ -123,13 +123,37 @@ if __name__ == '__main__':
     data_dir = sys.argv[1]
     train_dataset, test_dataset = make_train_and_test_datasets( data_dir )
 
+    # Configure optimizer
+    optimizer = tf.keras.optimizers.SGD(
+        learning_rate=0.0001, momentum=0.0, nesterov=False, name="SGD"
+    )
+
     # Compile and fit model
     model = CaptchaBreaker()
-    model.compile(optimizer='Adam', loss=CaptchaBreaker.yolo_loss)
-    model.fit(
-        train_dataset.batch(100), 
-        epochs=5,
-        validation_data=test_dataset.batch(100) )
+    model.compile(optimizer=optimizer, loss=CaptchaBreaker.yolo_loss)
+    try:
+        model.fit(
+            train_dataset.batch(10), 
+            epochs=5,
+            validation_data=test_dataset.batch(10) )
+    except Exception as e:
+        model.save('saves/aborted_model')
+        print('Exception encountered. Training aborted and model parameters saved. Searching for example input to reproduce exception...')
+        for input_tensor, _ in train_dataset.batch(1):
+            model_output = model.predict(input_tensor)
+            if np.isnan(model_output).any():
+                print('Found nan in output. Saving input and output and exiting.')
+                np.save('problem_input', input_tensor.numpy())
+                np.save('problem_output', model_output)
+                exit()
+            if np.isinf(model_output).any():
+                print('Found inf in output. Saving input and output and exiting.')
+                np.save('problem_input', input_tensor.numpy())
+                np.save('problem_output', model_output)
+                exit()
+            
+        print('Failed to find bad output. Throwing original error...')
+        raise e
 
     # Save :D
-    model.save('saves/model_v3.1')
+    model.save('saves/model_v6.1')
